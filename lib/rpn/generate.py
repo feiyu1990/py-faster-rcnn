@@ -5,18 +5,22 @@
 # Written by Ross Girshick
 # --------------------------------------------------------
 
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 from fast_rcnn.config import cfg
 from utils.blob import im_list_to_blob
 from utils.timer import Timer
 import numpy as np
 import cv2
+import os
 
 def _vis_proposals(im, dets, thresh=0.5):
     """Draw detected bounding boxes."""
+    print np.max(dets[:,-1]), dets
     inds = np.where(dets[:, -1] >= thresh)[0]
     if len(inds) == 0:
         return
-
     class_name = 'obj'
     im = im[:, :, (2, 1, 0)]
     fig, ax = plt.subplots(figsize=(12, 12))
@@ -90,7 +94,6 @@ def im_proposals(net, im):
     blobs_out = net.forward(
             data=blobs['data'].astype(np.float32, copy=False),
             im_info=blobs['im_info'].astype(np.float32, copy=False))
-
     scale = blobs['im_info'][0, 2]
     boxes = blobs_out['rois'][:, 1:].copy() / scale
     scores = blobs_out['scores'].copy()
@@ -115,3 +118,26 @@ def imdb_proposals(net, imdb):
             plt.show()
 
     return imdb_boxes
+def imgs_proposals(net, img_root, img_list, save_root):
+    """Generate RPN proposals on all images in an imdb."""
+
+    _t = Timer()
+    img_name_list = []
+    with open(img_list) as f:
+        for line in f:
+            img_name_list.append(os.path.join(img_root, line.split('\n')[0]))
+    img_boxes = [[] for _ in xrange(len(img_name_list))]
+    for i, img_name in enumerate(img_name_list):
+        im = cv2.imread(img_name)
+        _t.tic()
+        img_boxes[i], scores = im_proposals(net, im)
+        print np.sum(scores[:,-1]>0.9)
+        _t.toc()
+        print 'im_proposals: {:d}/{:d} {:.3f}s' \
+              .format(i + 1, len(img_name_list), _t.average_time)
+        dets = np.hstack((img_boxes[i], scores))
+        # from IPython import embed; embed()
+        _vis_proposals(im, dets[:10,:], thresh=0.9)
+        plt.savefig(save_root + img_name.split('/')[-1].split('.')[0] + '_bbox.jpg')
+
+    return img_boxes
